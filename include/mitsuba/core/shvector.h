@@ -181,6 +181,16 @@ public:
 		return m_coeffs[l*(l+1) + m];
 	}
 
+	/// Access coefficient by index
+	inline Float &operator()(int i) {
+		return  m_coeffs[i];
+	}
+
+	/// Access coefficient by index
+	inline const Float &operator()(int i) const {
+		return  m_coeffs[i];
+	}
+
 	/// Evaluate for a direction given in spherical coordinates
 	Float eval(Float theta, Float phi) const;
 

@@ -96,99 +96,29 @@ MTS_NAMESPACE_BEGIN
  * significantly accelerates the loading times of subsequent renderings. When this
  * is not desired, specify \code{cache=false} to the plugin.
  */
-class EnvironmentMap : public Emitter {
+class EnvironmentMap : public MapEmitter {
 public:
 	/* Store the environment in a blocked MIP map using half precision */
 	typedef TSpectrum<half, SPECTRUM_SAMPLES> SpectrumHalf;
 	typedef TMIPMap<Spectrum, SpectrumHalf> MIPMap;
 
-	EnvironmentMap(const Properties &props) : Emitter(props),
-			m_mipmap(NULL), m_cdfRows(NULL), m_cdfCols(NULL), m_rowWeights(NULL) {
+	EnvironmentMap(const Properties &props) : MapEmitter(props), m_mipmap(NULL), m_cdfRows(NULL), m_cdfCols(NULL), m_rowWeights(NULL) {
 		m_type |= EOnSurface | EEnvironmentEmitter;
-		uint64_t timestamp = 0;
-		bool tryReuseCache = false;
-		fs::path cacheFile;
-		ref<Bitmap> bitmap;
-
-		if (props.hasProperty("bitmap")) {
-			/* Support initialization via raw data passed from another plugin */
-			bitmap = reinterpret_cast<Bitmap *>(props.getData("bitmap").ptr);
-		} else {
-			m_filename = Thread::getThread()->getFileResolver()->resolve(
-				props.getString("filename"));
-
-			Log(EInfo, "Loading environment map \"%s\"", m_filename.filename().string().c_str());
-			if (!fs::exists(m_filename))
-				Log(EError, "Environment map file \"%s\" could not be found!", m_filename.string().c_str());
-
-			boost::system::error_code ec;
-			timestamp = (uint64_t) fs::last_write_time(m_filename, ec);
-			if (ec.value())
-				Log(EError, "Could not determine modification time of \"%s\"!", m_filename.string().c_str());
-
-			/* Create MIP map a cache when the environment map is large, and
-			   reuse cache files that have been created previously */
-			cacheFile = m_filename;
-			cacheFile.replace_extension(".mip");
-			tryReuseCache = fs::exists(cacheFile) && props.getBoolean("cache", true);
-		}
-
-		/* Gamma override */
 		m_gamma = props.getFloat("gamma", 0);
-
-		/* These are reasonable MIP map defaults for environment maps, I don't
-		   think there is a need to expose them through plugin parameters */
-		EMIPFilterType filterType = EEWA;
-		Float maxAnisotropy = 10.0f;
-
-		if (tryReuseCache && MIPMap::validateCacheFile(cacheFile, timestamp,
-				ENVMAP_PIXELFORMAT, ReconstructionFilter::ERepeat,
-				ReconstructionFilter::EClamp, filterType, m_gamma)) {
-			/* Reuse an existing MIP map cache file */
-			m_mipmap = new MIPMap(cacheFile, maxAnisotropy);
-		} else {
-			if (bitmap == NULL) {
-				/* Load the input image if necessary */
-				ref<Timer> timer = new Timer();
-				ref<FileStream> fs = new FileStream(m_filename, FileStream::EReadOnly);
-				bitmap = new Bitmap(Bitmap::EAuto, fs);
-				if (m_gamma != 0)
-					bitmap->setGamma(m_gamma);
-				Log(EDebug, "Loaded \"%s\" in %i ms", m_filename.filename().string().c_str(),
-					timer->getMilliseconds());
-			}
-
-			if (std::max(bitmap->getWidth(), bitmap->getHeight()) > 0xFFFF)
-				Log(EError, "Environment maps images must be smaller than 65536 "
-					" pixels in width and height");
-
-			/* (Re)generate the MIP map hierarchy; downsample using a
-			    2-lobed Lanczos reconstruction filter */
-			Properties rfilterProps("lanczos");
-			rfilterProps.setInteger("lobes", 2);
-			ref<ReconstructionFilter> rfilter = static_cast<ReconstructionFilter *> (
-				PluginManager::getInstance()->createObject(
-				MTS_CLASS(ReconstructionFilter), rfilterProps));
-			rfilter->configure();
-
-			/* Potentially create a new MIP map cache file */
-			bool createCache = !cacheFile.empty() && props.getBoolean("cache",
-				bitmap->getSize().x * bitmap->getSize().y > 1024*1024);
-
-			m_mipmap = new MIPMap(bitmap, ENVMAP_PIXELFORMAT, Bitmap::EFloat,
-				rfilter, ReconstructionFilter::ERepeat, ReconstructionFilter::EClamp,
-				filterType, maxAnisotropy, createCache ? cacheFile : fs::path(), timestamp,
-				std::numeric_limits<Float>::infinity(), Spectrum::EIlluminant);
-		}
+		m_scale = props.getFloat("scale", 1.0f);
+		cache = props.getBoolean("cache", true);
 
 		if (props.hasProperty("intensityScale"))
 			Log(EError, "The 'intensityScale' parameter has been deprecated and is now called scale.");
 
-		/* Scale factor */
-		m_scale = props.getFloat("scale", 1.0f);
+		if (props.hasProperty("bitmap"))
+			/* Support initialization via raw data passed from another plugin */
+			loadMipmap(reinterpret_cast<Bitmap *>(props.getData("bitmap").ptr), false, 0);
+		else
+			setFilename(props.getString("filename"));
 	}
 
-	EnvironmentMap(Stream *stream, InstanceManager *manager) : Emitter(stream, manager),
+	EnvironmentMap(Stream *stream, InstanceManager *manager) : MapEmitter(stream, manager),
 			m_mipmap(NULL), m_cdfRows(NULL), m_cdfCols(NULL), m_rowWeights(NULL) {
 		m_filename = stream->readString();
 		Log(EDebug, "Unserializing texture \"%s\"", m_filename.filename().string().c_str());
@@ -220,7 +150,7 @@ public:
 		configure();
 	}
 
-	virtual ~EnvironmentMap() {
+	~EnvironmentMap() {
 		if (m_mipmap)
 			delete m_mipmap;
 		if (m_cdfRows)
@@ -232,7 +162,7 @@ public:
 	}
 
 	void serialize(Stream *stream, InstanceManager *manager) const {
-		Emitter::serialize(stream, manager);
+		MapEmitter::serialize(stream, manager);
 		stream->writeString(m_filename.string());
 		stream->writeFloat(m_gamma);
 		stream->writeFloat(m_scale);
@@ -257,8 +187,32 @@ public:
 		}
 	}
 
+	void setFilename(const fs::path &file) {
+		m_filename = Thread::getThread()->getFileResolver()->resolve(file);
+
+		Log(EInfo, "Loading environment map \"%s\"", m_filename.filename().string().c_str());
+		if (!fs::exists(m_filename))
+			Log(EError, "Environment map file \"%s\" could not be found!", m_filename.string().c_str());
+
+		boost::system::error_code ec;
+		uint64_t timestamp = (uint64_t) fs::last_write_time(m_filename, ec);
+		if (ec.value())
+			Log(EError, "Could not determine modification time of \"%s\"!", m_filename.string().c_str());
+
+		/* Create MIP map a cache when the environment map is large, and
+		   reuse cache files that have been created previously */
+		fs::path cacheFile = m_filename;
+		cacheFile.replace_extension(".mip");
+
+		bool canReuseCache = cache && fs::exists(cacheFile) && MIPMap::validateCacheFile(cacheFile, timestamp, ENVMAP_PIXELFORMAT, ReconstructionFilter::ERepeat, ReconstructionFilter::EClamp, EEWA, m_gamma);
+		if (canReuseCache)
+			m_mipmap = new MIPMap(cacheFile, 10.0f);
+
+		loadMipmap(NULL, canReuseCache, timestamp);
+	}
+
 	void configure() {
-		Emitter::configure();
+		MapEmitter::configure();
 
 		if (!m_rowWeights) {
 			/// Build CDF tables to sample the environment map
@@ -429,29 +383,6 @@ public:
 		return m_invSurfaceArea;
 	}
 
-	/**
-	 * A note regarding sampleArea()/sampleDirection():
-	 *
-	 * Mitsuba's emitter/sensor API permits sampling the spatial and directional
-	 * components separately (in that order!). As nice as this is for bidirectional
-	 * techniques, it is unfortunately very difficult to reconcile with the default
-	 * environment map strategy of importance sampling a direction *first* from the
-	 * environment, followed by (*second*) uniformly picking a position on a hyperplane
-	 * perpendicular to that direction.
-	 *
-	 * Therefore, the following compromise is implemented:
-	 * 1. sampleArea(): uniformly sample a position on the scene's bounding sphere
-	 * 2. sampleDirection(): importance sample a direction from the environment map
-	 *
-	 * This is not that great, as many useless samples will be generated. Note however
-	 * that rendering scenes by tracing from the environment side is usually a
-	 * terrible strategy in any case, so at least not much is lost by making it worse.
-	 *
-	 * The direct illumination sampling code (\ref sampleDirect()), and the combined
-	 * position + direction code (\ref sampleRay) both does the right thing and are
-	 * not affected by any of this. Many of the bidirectional rendering
-	 * algorithms in Mitsuba can make use of direct illumination sampling strategies.
-	 */
 	Spectrum sampleDirection(DirectionSamplingRecord &dRec,
 			PositionSamplingRecord &pRec,
 			const Point2 &sample,
@@ -645,10 +576,42 @@ public:
 		return oss.str();
 	}
 
-	Shader *createShader(Renderer *renderer) const;
-
+	Shader* createShader(Renderer *renderer) const;
 	MTS_DECLARE_CLASS()
+
 private:
+	void loadMipmap(Bitmap *bitmap, bool hasCache, uint64_t timestamp) {
+		if (bitmap == NULL) {
+			/* Load the input image if necessary */
+			ref<Timer> timer = new Timer();
+			ref<FileStream> fs = new FileStream(m_filename, FileStream::EReadOnly);
+			bitmap = new Bitmap(Bitmap::EAuto, fs);
+			if (m_gamma != 0)
+				bitmap->setGamma(m_gamma);
+			Log(EDebug, "Loaded \"%s\" in %i ms", m_filename.filename().string().c_str(),
+				timer->getMilliseconds());
+		}
+
+		if (std::max(bitmap->getWidth(), bitmap->getHeight()) > 0xFFFF)
+			Log(EError, "Environment maps images must be smaller than 65536 "
+				" pixels in width and height");
+
+		/* (Re)generate the MIP map hierarchy; downsample using a
+		    2-lobed Lanczos reconstruction filter */
+		Properties rfilterProps("lanczos");
+		rfilterProps.setInteger("lobes", 2);
+		ref<ReconstructionFilter> rfilter = static_cast<ReconstructionFilter *> (
+			PluginManager::getInstance()->createObject(
+			MTS_CLASS(ReconstructionFilter), rfilterProps));
+		rfilter->configure();
+
+		/* Potentially create a new MIP map cache file */
+		if (cache && !hasCache)
+			m_mipmap = new MIPMap(bitmap, ENVMAP_PIXELFORMAT, Bitmap::EFloat,
+								  rfilter, ReconstructionFilter::ERepeat, ReconstructionFilter::EClamp,
+								  EEWA, 10.0f, fs::path(), timestamp, std::numeric_limits<Float>::infinity(), Spectrum::EIlluminant);
+	}
+
 	/// Sample from an array using the inversion method
 	inline uint32_t sampleReuse(float *cdf, uint32_t size, Float &sample) const {
 		float *entry = std::lower_bound(cdf, cdf+size+1, (float) sample);
@@ -656,8 +619,10 @@ private:
 		sample = (sample - (Float) cdf[index]) / (Float) (cdf[index+1] - cdf[index]);
 		return index;
 	}
+
 private:
 	MIPMap *m_mipmap;
+	bool cache;
 	float *m_cdfRows, *m_cdfCols;
 	Float *m_rowWeights;
 	fs::path m_filename;
@@ -753,7 +718,7 @@ private:
 	Float m_scale;
 };
 
-Shader *EnvironmentMap::createShader(Renderer *renderer) const {
+Shader* EnvironmentMap::createShader(Renderer *renderer) const {
 	Transform trafo = m_worldTransform->eval(0).inverse();
 	ref<Bitmap> bitmap = m_mipmap->toBitmap();
 #if SPECTRUM_SAMPLES != 3
@@ -763,6 +728,6 @@ Shader *EnvironmentMap::createShader(Renderer *renderer) const {
 }
 
 MTS_IMPLEMENT_CLASS(EnvironmentMapShader, false, Shader)
-MTS_IMPLEMENT_CLASS_S(EnvironmentMap, false, Emitter)
+MTS_IMPLEMENT_CLASS_S(EnvironmentMap, false, MapEmitter)
 MTS_EXPORT_PLUGIN(EnvironmentMap, "Environment map");
 MTS_NAMESPACE_END

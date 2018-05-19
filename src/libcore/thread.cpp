@@ -342,7 +342,7 @@ void Thread::dispatch(Thread *thread) {
 void Thread::join() {
 	/* Only one call to join() at a time */
 	boost::lock_guard<boost::mutex> guard(d->joinMutex);
-	if (d->joined)
+	if (d->joined || !d->thread.joinable())
 		return;
 	try {
 		d->thread.join();

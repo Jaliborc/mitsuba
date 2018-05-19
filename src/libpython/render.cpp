@@ -92,6 +92,7 @@ bp::list scene_getSensors(Scene *scene) {
 
 bp::object scene_getSensor(Scene *scene) { return cast(scene->getSensor()); }
 bp::object scene_getIntegrator(Scene *scene) { return cast(scene->getIntegrator()); }
+bp::object scene_getEnvironmentEmitter(Scene *scene) { return cast(scene->getEnvironmentEmitter()); }
 
 bp::list scene_getMeshes(Scene *scene) {
 	bp::list list;
@@ -122,6 +123,22 @@ bp::list scene_getMedia(Scene *scene) {
 	ref_vector<Medium> &media = scene->getMedia();
 	for (size_t i=0; i<media.size(); ++i)
 		list.append(cast(media[i].get()));
+	return list;
+}
+
+bp::list trimesh_getVertexPositions(TriMesh *mesh) {
+	bp::list list;
+	Point* points = mesh->getVertexPositions();
+	for (size_t i=0; i<mesh->getVertexCount(); ++i)
+		list.append(bp::object(points + i));
+	return list;
+}
+
+bp::list trimesh_getVertexNormals(TriMesh *mesh) {
+	bp::list list;
+	Normal* normals = mesh->getVertexNormals();
+	for (size_t i=0; i<mesh->getVertexCount(); ++i)
+		list.append(bp::object(normals + i));
 	return list;
 }
 
@@ -177,7 +194,7 @@ void export_render() {
 		.def("setDestinationFile", &Scene::setDestinationFile)
 		.def("destinationExists", &Scene::destinationExists)
 		.def("hasEnvironmentEmitter", &Scene::hasEnvironmentEmitter)
-		.def("getEnvironmentEmitter", &Scene::getEnvironmentEmitter, BP_RETURN_VALUE)
+		.def("getEnvironmentEmitter", &scene_getEnvironmentEmitter, BP_RETURN_VALUE)
 		.def("hasDegenerateSensor", &Scene::hasDegenerateSensor)
 		.def("hasDegenerateEmitters", &Scene::hasDegenerateEmitters)
 		.def("hasMedia", &Scene::hasMedia)
@@ -195,6 +212,21 @@ void export_render() {
 		.def("getMeshes", &scene_getMeshes)
 		.def("getEmitters", &scene_getEmitters)
 		.def("getMedia", &scene_getMedia);
+
+	BP_CLASS(Integrator, NetworkedObject, bp::no_init)
+		.def("getSubIntegrator", &Integrator::getSubIntegrator, BP_RETURN_VALUE)
+		.def("configureSampler", &Integrator::configureSampler)
+		.def("preprocess", &Integrator::preprocess)
+		.def("postprocess", &Integrator::postprocess)
+		.def("render", &Integrator::render)
+		.def("cancel", &Integrator::cancel);
+
+	BP_CLASS(SamplingIntegrator, Integrator, bp::no_init)
+		.def("Li", &SamplingIntegrator::Li)
+		.def("E", &SamplingIntegrator::E)
+		.def("renderBlock", &SamplingIntegrator::renderBlock)
+		.def("bindUsedResources", &SamplingIntegrator::bindUsedResources)
+		.def("wakeup", &SamplingIntegrator::wakeup);
 
 	BP_CLASS(Sampler, ConfigurableObject, bp::no_init)
 		.def("clone", &Sampler::clone, BP_RETURN_VALUE)
@@ -265,6 +297,43 @@ void export_render() {
 		.def("LoSub", &Intersection::LoSub)
 		.def("__repr__", &Intersection::toString);
 
+	BP_STRUCT(RadianceQueryRecord, bp::init<>())
+		.def(bp::init<const Scene*, Sampler*>())
+		.def(bp::init<const RadianceQueryRecord&>())
+		.def("newQuery", &RadianceQueryRecord::newQuery)
+		.def("rayIntersect", &RadianceQueryRecord::rayIntersect)
+		.def("nextSample2D", &RadianceQueryRecord::nextSample2D, BP_RETURN_VALUE)
+		.def("nextSample1D", &RadianceQueryRecord::nextSample1D)
+		.def_readwrite("scene", &RadianceQueryRecord::scene)
+		.def_readwrite("type", &RadianceQueryRecord::type)
+		.def_readwrite("sampler", &RadianceQueryRecord::sampler)
+		.def_readwrite("medium", &RadianceQueryRecord::medium)
+		.def_readwrite("depth", &RadianceQueryRecord::depth)
+		.def_readwrite("its", &RadianceQueryRecord::its)
+		.def_readwrite("alpha", &RadianceQueryRecord::alpha)
+		.def_readwrite("dist", &RadianceQueryRecord::dist)
+		.def_readwrite("extra", &RadianceQueryRecord::extra)
+		.def("__repr__", &RadianceQueryRecord::toString);
+
+
+	BP_SETSCOPE(RadianceQueryRecord_struct);
+	bp::enum_<RadianceQueryRecord::ERadianceQuery>("ERadianceQuery")
+		.value("EEmittedRadiance", RadianceQueryRecord::EEmittedRadiance)
+		.value("ESubsurfaceRadiance", RadianceQueryRecord::ESubsurfaceRadiance)
+		.value("EDirectSurfaceRadiance", RadianceQueryRecord::EDirectSurfaceRadiance)
+		.value("EIndirectSurfaceRadiance", RadianceQueryRecord::EIndirectSurfaceRadiance)
+		.value("ECausticRadiance", RadianceQueryRecord::ECausticRadiance)
+		.value("EDirectMediumRadiance", RadianceQueryRecord::EDirectMediumRadiance)
+		.value("EDistance", RadianceQueryRecord::EDistance)
+		.value("EOpacity", RadianceQueryRecord::EOpacity)
+		.value("EIntersection", RadianceQueryRecord::EIntersection)
+		.value("EVolumeRadiance", RadianceQueryRecord::EVolumeRadiance)
+		.value("ERadianceNoEmission", RadianceQueryRecord::ERadianceNoEmission)
+		.value("ERadiance", RadianceQueryRecord::ERadiance)
+		.value("ESensorRay", RadianceQueryRecord::ESensorRay)
+		.export_values();
+	BP_SETSCOPE(renderModule);	
+
 	BP_STRUCT(PositionSamplingRecord, bp::init<>())
 		.def(bp::init<Float>())
 		.def(bp::init<Intersection, EMeasure>())
@@ -332,12 +401,17 @@ void export_render() {
 		.def("getPrimitiveCount", &Shape::getPrimitiveCount)
 		.def("getEffectivePrimitiveCount", &Shape::getEffectivePrimitiveCount);
 
+	BP_CLASS(Emitter, ConfigurableObject, bp::no_init)
+		.def("setWorldTransform", &Emitter::setWorldTransform);
+
 	void (TriMesh::*triMesh_serialize1)(Stream *stream) const = &TriMesh::serialize;
 	void (TriMesh::*triMesh_serialize2)(Stream *stream, InstanceManager *) const = &TriMesh::serialize;
 
 	BP_CLASS(TriMesh, Shape, (bp::init<std::string, size_t, size_t, bool, bool, bool, bool, bool>()))
 		.def(bp::init<Stream *, InstanceManager *>())
 		.def(bp::init<Stream *, int>())
+		.def("getVertexPositions", &trimesh_getVertexPositions)
+		.def("getVertexNormals", &trimesh_getVertexNormals)
 		.def("getTriangleCount", &TriMesh::getTriangleCount)
 		.def("getVertexCount", &TriMesh::getVertexCount)
 		.def("hasVertexNormals", &TriMesh::hasVertexNormals)
@@ -365,7 +439,7 @@ void export_render() {
 	BP_CLASS(ProjectiveCamera, Sensor, bp::no_init)
 		.def("getViewTransform", &ProjectiveCamera::getViewTransform, BP_RETURN_VALUE)
 		.def("getWorldTransform", projectiveCamera_getWorldTransform1, BP_RETURN_VALUE)
-		.def("getWorldTransform", projectiveCamera_getWorldTransform2, BP_RETURN_VALUE)
+		//.def("getWorldTransform", projectiveCamera_getWorldTransform2, BP_RETURN_VALUE)
 		.def("setWorldTransform", projectiveCamera_setWorldTransform1)
 		.def("setWorldTransform", projectiveCamera_setWorldTransform2)
 		.def("getProjectionTransform", &ProjectiveCamera::getProjectionTransform, BP_RETURN_VALUE)

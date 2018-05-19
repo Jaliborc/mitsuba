@@ -555,6 +555,7 @@ public:
 	}
 
 	struct Vertex {
+		int id;
 		Point p;
 		Normal n;
 		Point2 uv;
@@ -627,6 +628,7 @@ public:
 				if (vertexId > (int) vertices.size() || vertexId <= 0)
 					Log(EError, "Out of bounds: tried to access vertex %i (max: %i)", vertexId, (int) vertices.size());
 
+				vertex.id = vertexId;
 				vertex.p = objectToWorld(vertices[vertexId-1]);
 				aabb.expandBy(vertex.p);
 
@@ -666,25 +668,32 @@ public:
 		}
 
 		ref<TriMesh> mesh = new TriMesh(name,
-			triangles.size(), vertexBuffer.size(),
+			triangles.size(), vertexBuffer.size(), vertices.size(),
 			hasNormals, hasTexcoords, false,
 			m_flipNormals, m_faceNormals);
 
 		std::copy(triangleArray, triangleArray+triangles.size(), mesh->getTriangles());
 
+		Point    *target_vertices = mesh->getVertices();
 		Point    *target_positions = mesh->getVertexPositions();
 		Normal   *target_normals   = mesh->getVertexNormals();
 		Point2   *target_texcoords = mesh->getVertexTexcoords();
+		int 	 *target_ids = mesh->getVertexIDs();
 
 		mesh->getAABB() = aabb;
 
 		for (size_t i=0; i<vertexBuffer.size(); i++) {
+			*target_ids++ = vertexBuffer[i].id;
 			*target_positions++ = vertexBuffer[i].p;
+
 			if (hasNormals)
 				*target_normals++ = vertexBuffer[i].n;
 			if (hasTexcoords)
 				*target_texcoords++ = vertexBuffer[i].uv;
 		}
+
+		for (size_t i=0; i<vertices.size(); i++)
+			*target_vertices++ = vertices[i];
 
 		mesh->incRef();
 		m_materialAssignment.push_back(materialName);

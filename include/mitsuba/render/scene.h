@@ -71,6 +71,7 @@ public:
 	 * of the methods in this class.
 	 */
 	void initialize();
+	bool initialized() const;
 
 	/**
 	 * \brief Initialize the scene for bidirectional rendering algorithms.
@@ -907,6 +908,7 @@ public:
 	// =============================================================
 
 	/// Return the scene's environment emitter (if there is one)
+	inline Emitter *getEnvironmentEmitter() { return m_environmentEmitter; }
 	inline const Emitter *getEnvironmentEmitter() const { return m_environmentEmitter.get(); }
 
 	/// Does the scene have a environment emitter?

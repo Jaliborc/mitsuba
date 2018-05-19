@@ -44,6 +44,16 @@ struct MTS_EXPORT_CORE Triangle {
 		return result;
 	}
 
+	// Given the vertex positions, computes the face normal
+	inline Normal getNormal(const Point *positions) {
+		const Point &p0 = positions[idx[0]];
+		const Point &p1 = positions[idx[1]];
+		const Point &p2 = positions[idx[2]];
+
+		Vector sideA = p1 - p0, sideB = p2 - p0;
+		return Normal(normalize(cross(sideA, sideB)));
+	}
+
 	/**
 	 * \brief Returns the axis-aligned bounding box of a triangle after it has
 	 * clipped to the extends of another given AABB.

@@ -144,6 +144,10 @@ bool Emitter::isCompound() const {
 	return false;
 }
 
+MapEmitter::MapEmitter(const Properties &props) : Emitter(props) {}
+MapEmitter::MapEmitter(Stream *stream, InstanceManager *manager) : Emitter(stream, manager) {}
+
+MTS_IMPLEMENT_CLASS(MapEmitter, true, Emitter)
 MTS_IMPLEMENT_CLASS(Emitter, false, AbstractEmitter)
 MTS_IMPLEMENT_CLASS(AbstractEmitter, true, ConfigurableObject)
 MTS_NAMESPACE_END

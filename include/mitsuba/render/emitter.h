@@ -620,6 +620,16 @@ protected:
 	Float m_samplingWeight;
 };
 
+class MTS_EXPORT_RENDER MapEmitter : public Emitter {
+public:
+	virtual void setFilename(const fs::path &file) = 0;
+	MTS_DECLARE_CLASS()
+
+protected:
+	MapEmitter(const Properties &props);
+	MapEmitter(Stream *stream, InstanceManager *manager);
+};
+
 MTS_NAMESPACE_END
 
 #endif /* __MITSUBA_RENDER_EMITTER_H_ */

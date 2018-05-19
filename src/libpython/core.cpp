@@ -335,6 +335,7 @@ bp::object cast(ConfigurableObject *obj) {
 	TryCast(TriMesh);
 	TryCast(Shape);
 	TryCast(PhaseFunction);
+	TryCast(SamplingIntegrator);
 	TryCast(Integrator);
 	TryCast(Texture);
 	TryCast(Medium);
@@ -1199,7 +1200,7 @@ void export_core() {
 		.def(bp::self /= Float())
 		.def("__repr__", &Matrix4x4::toString);
 
-	bp::class_<Ray>("Ray", bp::init<>())
+	BP_STRUCT(Ray, bp::init<>())
 		.def(bp::init<Ray &>())
 		.def(bp::init<Ray &, Float, Float>())
 		.def(bp::init<Point, Vector, Float>())
@@ -1215,6 +1216,16 @@ void export_core() {
 		.def("setTime", &Ray::setTime)
 		.def("eval", &ray_eval, BP_RETURN_VALUE)
 		.def("__repr__", &Ray::toString);
+
+	BP_SUBSTRUCT(RayDifferential, Ray, bp::init<>())
+		.def(bp::init<Ray &>())
+		.def(bp::init<RayDifferential &>())
+		.def(bp::init<const Point&, const Vector&, Float>())
+		.def_readwrite("rxOrigin", &RayDifferential::rxOrigin)
+		.def_readwrite("ryOrigin", &RayDifferential::ryOrigin)
+		.def_readwrite("rxDirection", &RayDifferential::rxDirection)
+		.def_readwrite("ryDirection", &RayDifferential::ryDirection)
+		.def_readwrite("hasDifferentials", &RayDifferential::hasDifferentials);
 
 	bp::class_<BSphere>("BSphere", bp::init<>())
 		.def(bp::init<BSphere>())

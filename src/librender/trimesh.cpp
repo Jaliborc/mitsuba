@@ -39,23 +39,40 @@ TriMesh::TriMesh(const std::string &name, size_t triangleCount,
 		size_t vertexCount, bool hasNormals, bool hasTexcoords,
 		bool hasVertexColors, bool flipNormals, bool faceNormals)
  	: Shape(Properties()), m_triangleCount(triangleCount),
-	  m_vertexCount(vertexCount), m_flipNormals(flipNormals),
-	  m_faceNormals(faceNormals) {
+	  m_vertexCount(vertexCount), m_verticeCount(0), m_flipNormals(flipNormals),
+	  m_faceNormals(faceNormals), m_tangents(NULL) {
 	m_name = name;
 	m_triangles = new Triangle[m_triangleCount];
+	m_ids = new int[m_vertexCount];
 	m_positions = new Point[m_vertexCount];
 	m_normals = hasNormals ? new Normal[m_vertexCount] : NULL;
 	m_texcoords = hasTexcoords ? new Point2[m_vertexCount] : NULL;
 	m_colors = hasVertexColors ? new Color3[m_vertexCount] : NULL;
-	m_tangents = NULL;
 	m_surfaceArea = m_invSurfaceArea = -1;
+	m_mutex = new Mutex();
+}
+
+TriMesh::TriMesh(const std::string &name, size_t triangleCount, size_t vertexCount, size_t verticeCount, bool hasNormals, bool hasTexcoords, bool hasVertexColors, bool flipNormals, bool faceNormals)
+ 	: Shape(Properties()), m_triangleCount(triangleCount),
+	  m_vertexCount(vertexCount), m_verticeCount(0), m_flipNormals(flipNormals),
+	  m_faceNormals(faceNormals), m_tangents(NULL) {
+	m_name = name;
+	m_triangles = new Triangle[m_triangleCount];
+	m_ids = new int[m_vertexCount];
+	m_positions = new Point[m_vertexCount];
+	m_normals = hasNormals ? new Normal[m_vertexCount] : NULL;
+	m_texcoords = hasTexcoords ? new Point2[m_vertexCount] : NULL;
+	m_colors = hasVertexColors ? new Color3[m_vertexCount] : NULL;
+	m_surfaceArea = m_invSurfaceArea = -1;
+	m_vertices = new Point[verticeCount];
+	m_verticeCount = verticeCount;
 	m_mutex = new Mutex();
 }
 
 TriMesh::TriMesh(const Properties &props)
  : Shape(props), m_triangles(NULL), m_positions(NULL),
 	m_normals(NULL), m_texcoords(NULL), m_tangents(NULL),
-	m_colors(NULL) {
+	m_colors(NULL), m_verticeCount(0) {
 
 	/* By default, any existing normals will be used for
 	   rendering. If no normals are found, Mitsuba will
@@ -387,6 +404,8 @@ void TriMesh::configure() {
 	   is involved. TODO: find a way to avoid this expense (compute on demand?) */
 	if (hasBSDF() && (m_bsdf->getType() & BSDF::EGlossy))
 		computeUVTangents();
+
+	Log(EDebug, "AABB of %s", m_aabb.toString().c_str());
 }
 
 void TriMesh::prepareSamplingTable() {

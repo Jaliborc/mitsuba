@@ -66,6 +66,14 @@ public:
 			bool hasVertexColors = false,
 			bool flipNormals = false,
 			bool faceNormals = false);
+	TriMesh(const std::string &name,
+			size_t triangleCount, size_t vertexCount,
+			size_t verticeCount,
+			bool hasNormals = false,
+			bool hasTexcoords = false,
+			bool hasVertexColors = false,
+			bool flipNormals = false,
+			bool faceNormals = false);
 
 	/// Unserialize a triangle mesh
 	TriMesh(Stream *stream, InstanceManager *manager);
@@ -113,8 +121,11 @@ public:
 
 	/// Return the number of triangles
 	inline size_t getTriangleCount() const { return m_triangleCount; }
-	/// Return the number of vertices
+	/// Return the number of "vertexes"
 	inline size_t getVertexCount() const { return m_vertexCount; }
+
+	// Return the number of actual vertices
+	inline size_t numVertices() const { return m_verticeCount; }
 
 	/// Return the triangle list (const version)
 	inline const Triangle *getTriangles() const { return m_triangles; };
@@ -125,6 +136,12 @@ public:
 	inline const Point *getVertexPositions() const { return m_positions; };
 	/// Return the vertex positions
 	inline Point *getVertexPositions() { return m_positions; };
+
+	/// Return the vertices positions
+	inline Point *getVertices() { return m_vertices; };
+
+	/// Return the vertex identifiers
+	inline int *getVertexIDs() { return m_ids; };
 
 	/// Return the vertex normals (const version)
 	inline const Normal *getVertexNormals() const { return m_normals; };
@@ -342,6 +359,7 @@ protected:
 	std::string m_name;
 	AABB m_aabb;
 	Triangle *m_triangles;
+	Point *m_vertices;
 	Point *m_positions;
 	Normal *m_normals;
 	Point2 *m_texcoords;
@@ -349,8 +367,10 @@ protected:
 	Color3 *m_colors;
 	size_t m_triangleCount;
 	size_t m_vertexCount;
+	size_t m_verticeCount;
 	bool m_flipNormals;
 	bool m_faceNormals;
+	int *m_ids;
 
 	/* Surface and distribution -- generated on demand */
 	DiscreteDistribution m_areaDistr;
